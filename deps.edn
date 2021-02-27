@@ -1,0 +1,17 @@
+{:paths ["src" "resources"]
+ :jvm-opts ["-Xmx6g"]
+ :deps {org.clojure/clojure {:mvn/version "1.10.0"}
+        ;; profiling
+        cljol/cljol {:git/url "https://github.com/jafingerhut/cljol"
+                     :sha "11d4aa72fdd19248bd7600fb7b5cde7189f32938"}
+        com.taoensso/tufte {:mvn/version "2.2.0"}
+        ;; logging
+        com.taoensso/timbre {:mvn/version "4.10.0"}}
+ :aliases {:dev {:extra-paths ["test" "examples" "dev"]
+                 :extra-deps {}}
+           :jar {:replace-deps {com.github.seancorfield/depstar {:mvn/version "2.0.193"}}
+                 :exec-fn hf.depstar/jar
+                 :exec-args {:jar "tightly-packed-trie.jar" :sync-pom true}}
+           :deploy {:replace-deps {slipset/deps-deploy {:mvn/version "0.1.5"}}
+                    :exec-fn deps-deploy.deps-deploy/deploy
+                    :exec-args {:installer :remote :artifact "tightly-packed-trie.jar"}}}}
