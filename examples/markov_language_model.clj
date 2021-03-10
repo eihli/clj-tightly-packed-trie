@@ -1,16 +1,16 @@
 (ns markov-language-model
   (:require [clojure.string :as string]
             [clojure.java.io :as io]
-            [com.owoga.tightly-packed-trie.core :as tpt]
+            [com.owoga.trie.math :as math]
+            [com.owoga.tightly-packed-trie :as tpt]
             [com.owoga.tightly-packed-trie.encoding :as encoding]
+            [com.owoga.trie :as tr]
             [cljol.dig9 :as d]
             [clojure.zip :as zip]
             [com.owoga.tightly-packed-trie.bit-manip :as bm]))
 
 (def corpus (slurp (io/resource "cask_of_amontillado.txt")))
 
-;; For better generation of text, you'll probably want to pad the starts
-;; of sentences with n-1 "start-of-sentence" tokens.
 (defn prep-punctuation-for-tokenization
   "Puts spaces around punctuation so that they aren't
   tokenized with the words they are attached to.
@@ -19,6 +19,17 @@
   during tokenization."
   [text]
   (string/replace text #"([\.,!?])" " $1 "))
+
+;; For better generation of text, you'll probably want to pad the starts
+;; of sentences with n-1 "start-of-sentence" tokens.
+(defn add-bol-and-eol-tokens [text]
+  (-> text
+      (string/replace #"(\.)" "</s> . <s>")
+      (#(str "<s> " %))))
+
+(defn remove-quotes
+  [text]
+  (string/replace text #"\"" ""))
 
 (defn remove-formatting-characters
   "Input has underscores, presumably because the text
@@ -31,6 +42,9 @@
   (-> text
       remove-formatting-characters
       prep-punctuation-for-tokenization
+      remove-quotes
+      add-bol-and-eol-tokens
+      string/lower-case
       (string/split #"[\n ]+")))
 
 (defn interleave-all
@@ -59,7 +73,16 @@
         p1 (partition 1 1 tokens)
         p2 (partition 2 1 tokens)
         p3 (partition 3 1 tokens)]
-    (interleave-all p1 p2 p3)))
+
+    [p1
+     p2
+     p3
+     (interleave-all p1 p2 p3)])
+  ;; => [((1) (2) (3) (4) (5))
+  ;;     ((1 2) (2 3) (3 4) (4 5))
+  ;;     ((1 2 3) (2 3 4) (3 4 5))
+  ;;     ((1) (1 2) (1 2 3) (2) (2 3) (2 3 4) (3) (3 4) (3 4 5) (4) (4 5) (5))]
+  )
 
 (defn ngramify-tokens [n m tokens]
   (let [partition-colls (map #(partition % 1 tokens) (range n m))
@@ -69,37 +92,20 @@
 (comment
   (->> (tokenize corpus)
        (take 5)
-       (ngramify-tokens 1 4)) ;; => (("The")
-  ;;     ("The" "thousand")
-  ;;     ("The" "thousand" "injuries")
+       (ngramify-tokens 1 4))
+  ;; => (("the")
+  ;;     ("the" "thousand")
+  ;;     ("the" "thousand" "injuries")
   ;;     ("thousand")
   ;;     ("thousand" "injuries")
   ;;     ("thousand" "injuries" "of")
   ;;     ("injuries")
   ;;     ("injuries" "of")
-  ;;     ("injuries" "of" "Fortunato")
+  ;;     ("injuries" "of" "fortunato")
   ;;     ("of")
-  ;;     ("of" "Fortunato")
-  ;;     ("Fortunato"))
+  ;;     ("of" "fortunato")
+  ;;     ("fortunato"))
   )
-
-(defn make-trie
-  ([] (tpt/->Trie
-       (fn update-fn [prev cur]
-         (if (nil? prev)
-           (sorted-map
-            :value (last cur)
-            :count 1)
-           (-> prev
-               (update :count (fnil inc 0))
-               (assoc :value (last cur)))))
-       (sorted-map)))
-  ([& ks]
-   (reduce
-    (fn [t k]
-      (conj t k))
-    (make-trie)
-    ks)))
 
 (defn add-terminal-value-to-ngram
   "The Trie expects entries to be of the form '(k1 k2 k3 value).
@@ -111,81 +117,10 @@
 
 (comment
   (let [ngrams (->> corpus
-                    tokenize
-                    (take 200)
-                    (ngramify-tokens 1 4)
-                    (map add-terminal-value-to-ngram))
-        trie (apply make-trie ngrams)]
-    (tpt/as-map trie))
-  ;; {:root
-  ;;  {:children
-  ;;   {","
-  ;;    {:children
-  ;;     {"I"
-  ;;      {:children {"vowed" {:count 1, :value ("," "I" "vowed")}},
-  ;;       :count 1,
-  ;;       :value ("," "I")},
-  ;;      "and"
-  ;;      {:children {"he" {:count 1, :value ("," "and" "he")}},
-  ;;       :count 1,
-  ;;       :value ("," "and")},
-  ;;       ,,,}}}}}}
-
-  )
-
-;; TODO: Move this to ITrie?
-(defn trie->seq-of-nodes
-  "Returns a seq of every terminal node. Useful for things like
-  doing aggregation calculations."
-  [trie]
-  (->> trie
-       tpt/as-vec
-       zip/vector-zip
-       (iterate zip/next)
-       (take-while (complement zip/end?))
-       (map zip/node)
-       (filter map?)))
-
-;; The tightly packed trie uses an encoding where integers are encoded with
-;; variable lengths. To maximize memory efficiency, the most commonly used values
-;; should have the smallest integer IDs. That way the values that most commonly appear
-;; are encoded with the fewest bytes.
-(defn seq-of-nodes->sorted-by-count
-  "Sorted first by the rank of the ngram, lowest ranks first.
-  Sorted second by the frequency of the ngram, highest frequencies first.
-  This is the order that you'd populate a mapping of keys to IDs."
-  [nodes]
-  (->> nodes
-       (map (comp first seq))
-       (map (fn [[k v]]
-              (vector (:value v) (:count v))))
-       ;; root node and padded starts
-       (remove (comp nil? second))
-       (sort-by #(vector (count (first %))
-                         (- (second %))))))
-
-(comment
-  (let [ngrams (->> corpus
-                    tokenize
-                    (take 200)
-                    (ngramify-tokens 1 4)
-                    (map add-terminal-value-to-ngram))
-        trie (apply make-trie ngrams)]
-    (->> trie
-         trie->seq-of-nodes
-         seq-of-nodes->sorted-by-count
-         (take 10)))
-  ;; => ([(",") 11]
-  ;;     [(".") 9]
-  ;;     [("I") 8]
-  ;;     [("the") 6]
-  ;;     [("to") 6]
-  ;;     [("was") 5]
-  ;;     [("a") 4]
-  ;;     [("my") 4]
-  ;;     [("of") 4]
-  ;;     [("as") 3])
-  )
+                  tokenize
+                  (take 200)
+                  (ngramify-tokens 1 4)
+                  (map add-terminal-value-to-ngram))]))
 
 (defn trie->database
   "It's convenient to work with a trie that has keys and values as
@@ -194,10 +129,14 @@
   we need every value to be an integer that we can variable-length-encode.
 
   This creates a database for conveniently converting the human-readable
-  entries to ids and back from ids to human-readable entries."
+  entries to ids and back from ids to human-readable entries.
+
+  Ids will start at 1 so that 0 can be reserved for the root node."
   [trie]
-  (let [sorted-keys (->> (trie->seq-of-nodes trie)
-                         seq-of-nodes->sorted-by-count)]
+  (let [sorted-keys (->> (seq trie)
+                         (sort-by (fn [[k v]]
+                                    (:count v)))
+                         (reverse))]
     (loop [sorted-keys sorted-keys
            database {}
            i 1]
@@ -207,12 +146,12 @@
          (rest sorted-keys)
          (-> database
              (assoc (first (first sorted-keys))
-                    {:count (second (first sorted-keys))
-                     :id i})
+                    (assoc (second (first sorted-keys)) :id i))
              (assoc i (first (first sorted-keys))))
          (inc i))))))
 
 (comment
+  (take 10 (trie->database trie))
   (let [ngrams (->> corpus
                     tokenize
                     (take 200)
@@ -220,56 +159,157 @@
                     (map add-terminal-value-to-ngram))
         trie (apply make-trie ngrams)]
     (trie->database trie))
- ;; {("at") {:count 1, :id 39},
- ;; 453 ("revenge" "." "You"),
- ;; ("The") {:count 1, :id 37},
- ;; ("resolved" ",") {:count 1, :id 256},
- ;; 487 ("very" "definitiveness" "with"),
- ;; ("be" "respected") {:count 1, :id 170},
- ;; ("a" "point") {:count 1, :id 158},
- ;; 357 ("and" "he" "did"),
- ;; 275 ("the" "very"),
- ;; ("doubt" "my" "good") {:count 1, :id 381},
- ;; ,,,}
+  ;; {("at") {:count 1, :id 39},
+  ;; 453 ("revenge" "." "You"),
+  ;; ("The") {:count 1, :id 37},
+  ;; ("resolved" ",") {:count 1, :id 256},
+  ;; 487 ("very" "definitiveness" "with"),
+  ;; ("be" "respected") {:count 1, :id 170},
+  ;; ("a" "point") {:count 1, :id 158},
+  ;; 357 ("and" "he" "did"),
+  ;; 275 ("the" "very"),
+  ;; ("doubt" "my" "good") {:count 1, :id 381},
+  ;; ,,,}
   )
-
-(seq {"and" {:count 1 :value '("foo")}});; => (["and" {:count 1, :value ("foo")}])
 
 (defn transform-trie->ids
   "Once we have a database to convert from string-keys to integer-ids and back,
-  we can traverse the trie using its `transform` zipper and `zip/edit` each
-  node replacing the string-keys with their integer-ids."
+  we can traverse the trie replacing the string-keys with their integer-ids."
   [trie database]
-  (let [transform-p #(map? (zip/node %))
-        transform-f
-        (fn tf [loc]
-          (zip/edit
-           loc
-           (fn [node]
-             ;; {"And {:count 1, :value (! " "And)}} ;; <- Node
-             (let [[k v] (first (seq node))]
-               {(get-in database [(list k) :id] (if (= k :root) :root))
-                (assoc v :value (get-in database [(:value v) :id] 0))}))))]
-    (tpt/transform trie (tpt/visitor-filter transform-p transform-f))))
+  (->> trie
+       (map
+        (fn [[k v]]
+          [(vec (map #(get (get database [%]) :id) k))
+           {:id (get-in database [k :id])
+            :count (get-in database [k :count])}]))
+       (into (tr/make-trie))))
 
 (def trie
   (let [ngrams (->> corpus
                     tokenize
                     (ngramify-tokens 1 4)
-                    (map add-terminal-value-to-ngram))]
-    (apply make-trie ngrams)))
+                    (map add-terminal-value-to-ngram)
+                    (map (fn [entry]
+                           (list (butlast entry)
+                                 (last entry)))))]
+    (->> ngrams
+         (reduce
+          (fn [acc [k v]]
+            (update
+             acc
+             k
+             (fnil
+              (fn [existing]
+                (update existing :count inc))
+              {:value v
+               :count 0})))
+          (tr/make-trie)))))
+
+(comment
+  (take 10 (drop 1000 trie))
+  ;; => ([["be" "awaiting"] {:value ("be" "awaiting"), :count 1}]
+  ;;     [["be" "cautious" "as"] {:value ("be" "cautious" "as"), :count 1}]
+  ;;     [["be" "gone"] {:value ("be" "gone"), :count 2}]
+  ;;     [["be" "ill" ","] {:value ("be" "ill" ","), :count 1}])
+  )
 
 (def trie-database
   (trie->database trie))
 
+(comment
+  (take 4 trie-database)
+  ;; => ([0 ["."]]
+  ;;     [["to" "your" "long"] {:value ("to" "your" "long"), :count 1, :id 1119}]
+  ;;     [["an" "instant" "he"] {:value ("an" "instant" "he"), :count 1, :id 4800}]
+  ;;     [["fifth" "," "the"] {:value ("fifth" "," "the"), :count 1, :id 3919}])
+  )
+
 (def tpt-ready-trie (transform-trie->ids trie trie-database))
 
+(comment
+  (take 4 tpt-ready-trie)
+  ;; => ([[0 1 27] {:id 5082, :count 1}]
+  ;;     [[0 1 104] {:id 5072, :count 1}]
+  ;;     [[0 1 112] {:id 5075, :count 1}]
+  ;;     [[0 1 146] {:id 5077, :count 1}])
+
+  )
+
+(defn value-encode-fn [v]
+  (if (= v ::tpt/root)
+    (encoding/encode 0)
+    (byte-array
+     (concat (encoding/encode (:id v))
+             (encoding/encode (:count v))))))
+
+(defn value-decode-fn [byte-buffer]
+  (let [id (encoding/decode byte-buffer)]
+    (if (zero? id)
+      {:id :root}
+      {:id id
+       :count (encoding/decode byte-buffer)})))
+
 (def tightly-packed-trie
-  (tpt/tightly-packed-trie tpt-ready-trie))
+  (tpt/tightly-packed-trie tpt-ready-trie value-encode-fn value-decode-fn))
 
 ;;;; DEMO
-;;
+;;;; ** Out of date since new TrieAgain code
 (comment
+;;;; Size comparisons
+  ;;
+  ;; Original trie, keys and values are lists and strings.
+  ;; ~1,900 kb
+  (d/sum [trie])
+  ;; 61112 objects
+  ;; 103249 references between them
+  ;; 1901656 bytes total in all objects
+  ;; no cycles
+  ;; 8421 leaf objects (no references to other objects)
+
+  ;; Original trie, keys and values numbers
+  ;; ~900 kb
+  (d/sum [tpt-ready-trie])
+  ;; 30008 objects
+  ;; 62543 references between them
+  ;; 907992 bytes total in all objects
+  ;; no cycles
+  ;; 5438 leaf objects (no references to other objects)
+
+  ;; Tightly-packed-trie, keys and values numbers (backed by var-len encoded ints)
+  ;; ~36 kb
+  (d/sum [tightly-packed-trie])
+  ;; 6 objects
+  ;; 5 references between them
+  ;; 36736 bytes total in all objects
+  ;; no cycles
+  ;; 4 leaf objects (no references to other objects)
+
+;;;; Size comparison summary
+  ;;
+  ;; Condensed original: 900 kb
+  ;; Tightly packed:     36  kb
+  ;; Compression:        ~96% !!!
+
+
+;;;; Getting value from each type of trie
+  ;;
+  (get trie ["<s>" "i" "was"])
+  ;; => {:value ("<s>" "i" "was"), :count 1}
+
+  (get tpt-ready-trie [0 8 21])
+  ;; => {:id 5116, :count 1}
+
+  (get tightly-packed-trie [0 8 21])
+  ;; => {:id 5116, :count 1}
+
+  ;; And then to get back to a string version, use the database.
+  (->> [0 8 21]
+       (get tightly-packed-trie)
+       :id
+       (get trie-database)
+       (get trie-database))
+  ;; => {:value ("<s>" "i" "was"), :count 1, :id 5116}
+
 ;;;; Our "database" (just a hash-map) serves a dual purpose.
   ;;
   ;; It maps n-grams to their frequency counts and to an integer ID.
@@ -286,33 +326,14 @@
   ;;     [("the" "feeble") {:count 1, :id 2693}]
   ;;     [("intermingling" "," "into") {:count 1, :id 4488}])
 
-
-;;;; We can `get` the value of an n-gram from a Trie.
-  ;; The value returned will be a Trie that has as its root node the
-  ;; value at the n-gram. This gives you access to all of the descendants.
-  ;;
-  ;; Having access to the descendants is useful for something like
-  ;; auto-complete. You can get in the trie the input to the completion, the prefix.
-  ;; Then you can get the completions by simple seq-ing over the child nodes.
-  (tpt/as-map (get trie '("," "I")))
-
-  ;; => {"I"
-  ;;     {:count 10,
-  ;;      :value ("," "I"),
-  ;;      :children
-  ;;      {"am" {:count 1, :value ("," "I" "am")},
-  ;;       "began" {:count 2, :value ("," "I" "began")},
-  ;;       ,,,
-  ;;       "well" {:count 1, :value ("," "I" "well")}}}}
-
 ;;;; Database
   ;; Each n-gram has its own integer ID. The integer IDs should be handed
   ;; out to n-grams in order of frequency. Therefore, you're 1-grams will probably
   ;; have lower IDs than the higher-order n-grams.
   ;;
   ;; Here we see "," is the 2nd most-common n-gram.
-  (get-in trie-database ['(",") :id]) ;; => 2
-  (get-in trie-database ['("I") :id]) ;; => 4
+  (get-in trie-database ['(",") :id]) ;; => 7
+  (get-in trie-database ['("i") :id]) ;; => 8
   ;; The ID of a 2-gram is not related in any way to
   ;; the two 1-grams that make it up. Every n-gram is unique
   ;; and gets its own unique ID.
@@ -326,9 +347,9 @@
   ;; To re-iterate: The keys are all 1-grams at every nesting level.
   ;; The values are the higher-order n-grams the lower in the nesting
   ;; that you go.
-  (get-in trie-database ['("," "I") :id]) ;; => 911
+  (get-in trie-database ['("," "i") :id]) ;; => 23
 
-;;;; Map-based Trie vs Tightly Packed Trie
+;;;; Trie vs Tightly Packed Trie
 ;;;;
   ;; The interface is *almost* the same between the two.
   ;; Tightly packed tries can't be updated or written to.
@@ -338,140 +359,47 @@
   ;;
   ;; Other than that though, let's see it in action!
   ;;
-;;;; Here is the map-based trie.
-  (->> (tpt/as-map (get trie '("," "I")))
-       (#(get-in % ["I" :children]))
-       (map seq)
-       (map first))
-  ;; => ("am" "began" "ceased" "had" "resumed" "soon" "suffered" "vowed" "well")
+;;;; Here is the Trie
+  (get trie '("i"))
+  ;; => {:value ("i"), :count 107}
+
+  (->> (tr/lookup trie '("i"))
+       (take 5))
+  ;; => ([["," "i"] {:value ("i" "," "i"), :count 1}]
+  ;;     [[","] {:value ("i" ","), :count 1}]
+  ;;     [["again" "paused"] {:value ("i" "again" "paused"), :count 1}]
+  ;;     [["again"] {:value ("i" "again"), :count 1}]
+  ;;     [["am" "on"] {:value ("i" "am" "on"), :count 1}])
+
+  (->> (tr/lookup trie '("i"))
+       (tr/children)
+       (map #(get % []))
+       (take 5))
+  ;; => ({:value ("i" ","), :count 1}
+  ;;     {:value ("i" "again"), :count 1}
+  ;;     {:value ("i" "am"), :count 1}
+  ;;     {:value ("i" "answered"), :count 1}
+  ;;     {:value ("i" "began"), :count 2})
 
 ;;;; And here is the tightly-packed trie
-  (->> (get tightly-packed-trie '(2 4))
-       tpt/children
-       (map tpt/value)
-       (map :value)
-       (map #(get trie-database %))
-       (map last)
-       sort)
-  ;; => ("am" "began" "ceased" "had" "resumed" "soon" "suffered" "vowed" "well")
+  (->> (tr/lookup tightly-packed-trie '(8))
+       (tr/children)
+       (map #(get % []))
+       (take 5))
+  ;; => ({:id 3392, :count 1}
+  ;;     {:id 3270, :count 1}
+  ;;     {:id 129, :count 5}
+  ;;     {:id 70, :count 9}
+  ;;     {:id 69, :count 9})
 
+  (->> (tr/lookup tightly-packed-trie '(8))
+       (tr/children)
+       (map #(get % []))
+       (take 5)
+       (map #(get trie-database (:id %))))
+  ;; => (["i" ","] ["i" "to"] ["i" "was"] ["i" "had"] ["i" "said"])
 ;;;; Ta-da!
-;;;; Let's check the size difference
-
-  ;; Memory footprint comparison
-  ;; 2.2mb -> 37kb.
-  ;; 1.7% of its original Clojure map size!!!
-  (->> trie (.trie) vector d/sum)
-
-  ;; 65485 objects
-  ;; 109687 references between them
-  ;; 2179088 bytes total in all objects
-  ;; no cycles
-  ;; 8413 leaf objects (no references to other objects)
-  ;; 1 root nodes (no reference to them from other objects _in this graph_)
-
-  (->> tightly-packed-trie (.byte-buffer) vector d/sum)
-  ;; 2 objects
-  ;; 1 references between them
-  ;; 37680 bytes total in all objects
-  ;; no cycles
-  ;; 1 leaf objects (no references to other objects)
-  ;; 1 root nodes (no reference to them from other objects _in this graph_)
-
-
-  (let [trie-at-2 (get tightly-packed-trie '(2))
-        address (.address trie-at-2)
-        byte-buffer (.byte-buffer trie-at-2)
-        limit (.limit trie-at-2)]
-    (tpt/wrap-byte-buffer
-     byte-buffer
-     (.position byte-buffer address)
-     (.limit byte-buffer limit)
-     (println "Address of node at 2" address)
-     (encoding/decode byte-buffer)
-     (encoding/decode byte-buffer)
-     (println "Size of index at 2" (encoding/decode byte-buffer))
-     (println "position of first key in index" (.position byte-buffer))
-     (encoding/decode-number-from-tightly-packed-trie-index byte-buffer)
-     (encoding/decode-number-from-tightly-packed-trie-index byte-buffer)
-     (.position byte-buffer (- address 1037)) ;; Position of '("," "the")
-     (encoding/decode byte-buffer)
-     (encoding/decode byte-buffer)
-     (encoding/decode byte-buffer) ;; 11 size of index
-     ;; 1462 position of buffer
-     ;; max-address of index = 1473 (or 1472?)
-     (.position byte-buffer)
-     (.position byte-buffer 2618) ;; First mid of broken binary search
-     (tpt/rewind-to-key byte-buffer 2500)
-     (println (.position byte-buffer))
-     (println (bm/to-binary-string (.get byte-buffer (.position byte-buffer))))
-     (println (bm/to-binary-string (.get byte-buffer (dec (.position byte-buffer)))))
-     
-     ))
-
-
-
-
-
-
-
-
-  (let [trie-at-2 (get tightly-packed-trie '(2))
-        address (.address trie-at-2)
-        byte-buffer (.byte-buffer trie-at-2)
-        limit (.limit trie-at-2)]
-    (tpt/wrap-byte-buffer
-     byte-buffer
-     (.position byte-buffer address)
-     (.limit byte-buffer limit)
-     (encoding/decode byte-buffer)
-     (encoding/decode byte-buffer)
-     (encoding/decode byte-buffer)
-     (encoding/decode-number-from-tightly-packed-trie-index byte-buffer)
-     (encoding/decode-number-from-tightly-packed-trie-index byte-buffer)
-     (.position byte-buffer (- address 1037))
-     (encoding/decode byte-buffer)
-     (encoding/decode byte-buffer)
-     (encoding/decode byte-buffer)))
-
-  ;; I's offset, 986.
-  ;; See below. ID at offset 986 is 2! Same as at above offset!
-  ;; And the count is 4? The count coincidentally is the ID we expect?
-  (let [trie-at-2 (get tightly-packed-trie '(2))
-        address 986
-        byte-buffer (.byte-buffer trie-at-2)
-        limit (.limit trie-at-2)]
-    (tpt/wrap-byte-buffer
-     byte-buffer
-     (.position byte-buffer address)
-     (.limit byte-buffer limit)
-     (encoding/decode byte-buffer)))
-
-  (get trie-database 4)
-  (let [byte-buffer (.byte-buffer tightly-packed-trie)]
-    (.position byte-buffer)))
-
-;; Memory footprint comparison
-;; 2.2mb -> 32kb.
-;; 1.5% of its original Clojure map size!
-(comment
-  (->> trie (.trie) vector d/sum)
-  ;; 65485 objects
-  ;; 109687 references between them
-  ;; 2179088 bytes total in all objects
-  ;; no cycles
-  ;; 8413 leaf objects (no references to other objects)
-  ;; 1 root nodes (no reference to them from other objects _in this graph_)
-
-  (->> tightly-packed-trie (.byte-buffer) vector d/sum)
-  ;; 2 objects
-  ;; 1 references between them
-  ;; 32896 bytes total in all objects
-  ;; no cycles
-  ;; 1 leaf objects (no references to other objects)
-  ;; 1 root nodes (no reference to them from other objects _in this graph_)
   )
-
 
 (defn key-get-in-tpt [tpt db ks]
   (let [id (map #(get-in db [(list %) :id]) ks)
@@ -488,45 +416,54 @@
   (key-get-in-tpt
    tightly-packed-trie
    trie-database
-   '("another"))
+   '("i" "will"))
+  ;; => {(8 49) {:id 3257, :count 1}}
 
-  ;; => {(2 2 3) {:value 3263, :count 462}}
   (id-get-in-tpt
    tightly-packed-trie
    trie-database
-   '(2 2 3))
-  ;; => {("<s>" "<s>" "the") {:value ("<s>" "<s>" "the"), :count 462}}
+   '(8 49))
+  ;; => {("i" "will") {:id 3257, :count 1, :value ["i" "will"]}}
+
   )
 
+;;;; Markov-generating text from trie
 (comment
-  ;; database
-  (let [texts (->> (dark-corpus-file-seq 500 2)
-                   (map slurp))
-        trie (create-trie-from-texts texts)]
-    (->> (trie->database trie)
-         (#(get % 3))))
+  (def example-story
+    (loop [generated-text [(:id (get trie-database ["<s>"]))]
+           i 0]
+      (if (> i 100)
+        generated-text
+        (recur
+         (conj
+          generated-text
+          (tpt/.key
+           (math/weighted-selection
+            #(:count (get % []))
+            (loop [i 3
+                   children
+                   (tr/children
+                    (tr/lookup
+                     tightly-packed-trie
+                     (vec (take-last i generated-text))))]
+              (if (empty? children)
+                (recur (dec i)
+                       (tr/children
+                        (tr/lookup
+                         tightly-packed-trie
+                         (vec (take-last i generated-text)))))
+                children)))))
+         (inc i)))))
 
-  (let [texts (->> (dark-corpus-file-seq 500 2)
-                   (map slurp))
-        trie (create-trie-from-texts texts)]
-    (tpt/as-map (transform-trie->ids trie)))
+  (->> example-story
+       (map #(get trie-database %))
+       (apply concat)
+       (remove #{"<s>" "</s>"})
+       (string/join " ")
+       (#(string/replace % #" ([\.,\?])" "$1"))
+       ((fn [txt]
+          (string/replace txt #"(^|\. |\? )([a-z])" (fn [[a b c]]
+                                                      (str b (.toUpperCase c)))))))
 
-  (let [texts (->> (dark-corpus-file-seq 500 2)
-                   (map slurp))
-        trie (create-trie-from-texts texts)
-        tightly-packed-trie (tpt/tightly-packed-trie
-                             (transform-trie->ids trie))]
-    (get tightly-packed-trie '(2 2 3)))
-
-
-  (let [texts (->> (dark-corpus-file-seq 500 2)
-                   (map slurp))
-        trie (create-trie-from-texts texts)]
-    (tpt/as-map trie))
-
-  (let [text (slurp (first (dark-corpus-file-seq 500 1)))]
-    (->> text
-         util/clean-text
-         (#(string/split % #"\n+"))))
-
+  ;; => "I broke and reached him a flagon of de grave. We came at length. He again took my arm, and holding the flambeaux over the wall; i replied, were a great and numerous family. Whither? to your long life. Putting on a tight-fitting parti-striped dress, and descending again, and had given them explicit orders not to be found, and this time i made bold to seize fortunato by an arm above the elbow. In its destined position."
   )
