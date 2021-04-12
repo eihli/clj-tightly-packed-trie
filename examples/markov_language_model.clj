@@ -465,5 +465,10 @@
           (string/replace txt #"(^|\. |\? )([a-z])" (fn [[a b c]]
                                                       (str b (.toUpperCase c)))))))
 
-  ;; => "I broke and reached him a flagon of de grave. We came at length. He again took my arm, and holding the flambeaux over the wall; i replied, were a great and numerous family. Whither? to your long life. Putting on a tight-fitting parti-striped dress, and descending again, and had given them explicit orders not to be found, and this time i made bold to seize fortunato by an arm above the elbow. In its destined position."
+  ;; => "I broke and reached him a flagon of de grave. We came at length. He
+  ;; again took my arm, and holding the flambeaux over the wall; i replied, were
+  ;; a great and numerous family. Whither? to your long life. Putting on a
+  ;; tight-fitting parti-striped dress, and descending again, and had given them
+  ;; explicit orders not to be found, and this time i made bold to seize
+  ;; fortunato by an arm above the elbow. In its destined position."
   )
