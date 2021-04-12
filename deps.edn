@@ -11,7 +11,9 @@
                  :extra-deps {}}
            :jar {:replace-deps {com.github.seancorfield/depstar {:mvn/version "2.0.193"}}
                  :exec-fn hf.depstar/jar
-                 :exec-args {:jar "tightly-packed-trie.jar" :sync-pom true}}
+                 :exec-args {:jar "TightlyPackedTrie.jar" :sync-pom true}}
            :deploy {:replace-deps {slipset/deps-deploy {:mvn/version "0.1.5"}}
                     :exec-fn deps-deploy.deps-deploy/deploy
-                    :exec-args {:installer :remote :artifact "tightly-packed-trie.jar"}}}}
+                    :exec-args {:installer :remote
+                                :artifact "TightlyPackedTrie.jar"
+                                :sign-releases? true}}}}

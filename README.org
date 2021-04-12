@@ -1,5 +1,7 @@
 #+TITLE: Clojure Tightly Packed Trie
 
+[[https://img.shields.io/clojars/v/com.owoga/tightly-packed-trie.svg]]
+
 * What does this do?
 
 Tries as hash-maps are common, but hash-maps take up a lot of memory (relatively speaking).
