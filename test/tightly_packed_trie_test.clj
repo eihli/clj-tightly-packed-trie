@@ -18,15 +18,6 @@
       nil
       v)))
 
-(comment
-  (let [t (->> '([1 3] 13 [1] 1 [1 2] 12)
-               (apply trie/make-trie)
-               (#(tpt/tightly-packed-trie % value-encode-fn value-decode-fn)))
-        bb (.byte-buffer t)]
-    (trie/lookup t [1 2]))
-
-  )
-
 (deftest tightly-packed-trie-tests
   (let [empty-trie (-> (trie/make-trie)
                        (#(tpt/tightly-packed-trie % value-encode-fn value-decode-fn)))
@@ -70,7 +61,8 @@
                [[1 2]   nil]
                [[1 3 1] 131]
                [[1 3]   nil]
-               [[1]     nil])
+               [[1]     nil]
+               [[]      nil])
              (seq initialized-trie))))))
 
 (comment

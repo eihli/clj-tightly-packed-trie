@@ -50,6 +50,7 @@ But there's a couple cool Trie-specific functions.
 #+begin_src clojure :results none :session usage-example
 (trie/lookup loosely-packed-trie "do")
 ;; => {[\g] :dog, [\t] :dot}
+(seq (trie/lookup loosely-packed-trie "do"))
 #+end_src
 
 `children` returns the direct children of a node.
@@ -95,12 +96,12 @@ Here's a similar example to that above, but with values that we can tightly pack
     v
     (if (zero? v) nil v)))
 
-(def loosely-packed-trie
+(def tight-ready-loosely-packed-trie
   (trie/make-trie '(1 2 3) 123 '(1 2 1) 121 '(1 2 2) 122 '(1 3 1) 131))
 
 (def tightly-packed-trie
   (tpt/tightly-packed-trie
-   loosely-packed-trie
+   tight-ready-loosely-packed-trie
    encode-fn
    decode-fn))
 

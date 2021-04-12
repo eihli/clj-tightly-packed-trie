@@ -1,14 +1,23 @@
 (ns com.owoga.trie
   (:require [clojure.zip :as zip]))
 
-(defn trie->depth-first-post-order-traversable-zipperable-vector
+(defn -trie->depth-first-post-order-traversable-zipperable-vector
   ([path node]
    (vec
     (map
      (fn [[k v]]
-       [(trie->depth-first-post-order-traversable-zipperable-vector (conj path k) v)
+       [(-trie->depth-first-post-order-traversable-zipperable-vector (conj path k) v)
         (clojure.lang.MapEntry. (conj path k) (.value v))])
      (.children- node)))))
+
+(defn trie->depth-first-post-order-traversable-zipperable-vector
+  [path node]
+  (if (.value node)
+    [(-trie->depth-first-post-order-traversable-zipperable-vector
+      path node)
+     (clojure.lang.MapEntry. path (.value node))]
+    (-trie->depth-first-post-order-traversable-zipperable-vector
+     path node)))
 
 (defn depth-first-post-order-traversable-zipperable-vector->trie
   [cls [children [key node]]]

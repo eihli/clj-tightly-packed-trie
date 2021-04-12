@@ -236,7 +236,7 @@
   )
 
 (defn value-encode-fn [v]
-  (if (= v ::tpt/root)
+  (if (and (number? v) (zero? v))
     (encoding/encode 0)
     (byte-array
      (concat (encoding/encode (:id v))
@@ -245,7 +245,7 @@
 (defn value-decode-fn [byte-buffer]
   (let [id (encoding/decode byte-buffer)]
     (if (zero? id)
-      {:id :root}
+      {:id id}
       {:id id
        :count (encoding/decode byte-buffer)})))
 

@@ -38,23 +38,37 @@
             (.limit ~byte-buffer original-limit#)
             (.position ~byte-buffer original-position#)))))
 
-(defn trie->depth-first-post-order-traversable-zipperable-vector
-  ([path node decode-value-fn]
-   (vec
-    (map
-     (fn [child]
-       [(trie->depth-first-post-order-traversable-zipperable-vector
+(defn -trie->depth-first-post-order-traversable-zipperable-vector
+  [path node decode-value-fn]
+  (vec
+   (map
+    (fn [child]
+      [(-trie->depth-first-post-order-traversable-zipperable-vector
+        (conj path (.key child))
+        child
+        decode-value-fn)
+       (wrap-byte-buffer
+        (.byte-buffer child)
+        (.limit (.byte-buffer child) (.limit child))
+        (.position (.byte-buffer child) (.address child))
+        (clojure.lang.MapEntry.
          (conj path (.key child))
-         child
-         decode-value-fn)
-        (wrap-byte-buffer
-         (.byte-buffer child)
-         (.limit (.byte-buffer child) (.limit child))
-         (.position (.byte-buffer child) (.address child))
-         (clojure.lang.MapEntry.
-          (conj path (.key child))
-          (decode-value-fn (.byte-buffer child))))])
-     (trie/children node)))))
+         (decode-value-fn (.byte-buffer child))))])
+    (trie/children node))))
+
+(defn trie->depth-first-post-order-traversable-zipperable-vector
+  [path node decode-value-fn]
+  (let [byte-buffer (.byte-buffer node)
+        val (wrap-byte-buffer
+             byte-buffer
+             (.limit byte-buffer (.limit node))
+             (.position byte-buffer (.address node))
+             (decode-value-fn byte-buffer))]
+    [(-trie->depth-first-post-order-traversable-zipperable-vector
+      path
+      node
+      decode-value-fn)
+     (clojure.lang.MapEntry. path val)]))
 
 (defn rewind-to-key [bb stop]
   (loop []
