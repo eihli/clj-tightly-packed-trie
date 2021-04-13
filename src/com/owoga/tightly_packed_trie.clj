@@ -233,7 +233,7 @@
             current-depth (count (first current-node))]
         (cond
           (empty? nodes)
-          (let [child-index (first child-indexes)
+          (let [child-index (last child-indexes)
                 child-index-baos (ByteArrayOutputStream.)
                 _ (->> child-index
                        (run!
@@ -267,57 +267,56 @@
           ;; Gone up from depth to a parent.
           ;; Process index of children.
           (> previous-depth current-depth)
-          (do (let [[k v] (first nodes)
-                    value (value-encode-fn v)
-                    child-index (first child-indexes)
-                    child-index-baos (ByteArrayOutputStream.)
-                    _ (->> child-index
-                           (run!
-                            (fn [[key offset]]
-                              (.write
-                               child-index-baos
-                               (encoding/encode-key-to-tightly-packed-trie-index key))
-                              (.write
-                               child-index-baos
-                               (encoding/encode-offset-to-tightly-packed-trie-index
-                                (- current-offset offset))))))
-                    child-index-byte-array (.toByteArray child-index-baos)
-                    size-of-child-index (encoding/encode (count child-index-byte-array))
-                    current-index (second child-indexes)]
-                (.write baos value)
-                (.write baos size-of-child-index)
-                (.write baos child-index-byte-array)
-                (recur (rest nodes)
-                       (+ current-offset
-                          (count value)
-                          (count size-of-child-index)
-                          (count child-index-byte-array))
-                       current-depth
-                       (cons (conj current-index
-                                   [(last k)
-                                    current-offset])
-                             (drop 2 child-indexes)))))
-
+          (let [[k v] (first nodes)
+                value (value-encode-fn v)
+                child-index (last child-indexes)
+                child-index-baos (ByteArrayOutputStream.)
+                _ (->> child-index
+                       (run!
+                        (fn [[key offset]]
+                          (.write
+                           child-index-baos
+                           (encoding/encode-key-to-tightly-packed-trie-index key))
+                          (.write
+                           child-index-baos
+                           (encoding/encode-offset-to-tightly-packed-trie-index
+                            (- current-offset offset))))))
+                child-index-byte-array (.toByteArray child-index-baos)
+                size-of-child-index (encoding/encode (count child-index-byte-array))
+                current-index (last (pop child-indexes))]
+            (.write baos value)
+            (.write baos size-of-child-index)
+            (.write baos child-index-byte-array)
+            (recur (rest nodes)
+                   (+ current-offset
+                      (count value)
+                      (count size-of-child-index)
+                      (count child-index-byte-array))
+                   current-depth
+                   (conj (pop (pop child-indexes))
+                         (conj current-index
+                               [(last k)
+                                current-offset]))))
           ;; Down or even in depth to children
           ;; Start keeping track of new children index
           :else
-          (do (let [[k v] (first nodes)
-                    value (value-encode-fn v)
-                    size-of-child-index (encoding/encode 0)
-                    child-indexes (concat (repeat (- current-depth previous-depth) [])
-                                          child-indexes)
-                    current-child-index (first child-indexes)]
-                (.write baos value)
-                (.write baos size-of-child-index)
-                (recur (rest nodes)
-                       (+ current-offset
-                          (count value)
-                          (count size-of-child-index))
-                       current-depth
-                       (cons (conj current-child-index
-                                   [(last k)
-                                    current-offset])
-                             (rest child-indexes))))))))))
+          (let [[k v] (first nodes)
+                value (value-encode-fn v)
+                size-of-child-index (encoding/encode 0)
+                child-indexes (into child-indexes
+                                    (vec (repeat (- current-depth previous-depth) [])))
+                current-child-index (last child-indexes)]
+            (.write baos value)
+            (.write baos size-of-child-index)
+            (recur (rest nodes)
+                   (+ current-offset
+                      (count value)
+                      (count size-of-child-index))
+                   current-depth
+                   (conj (pop child-indexes)
+                         (conj current-child-index
+                               [(last k)
+                                current-offset])))))))))
 
 ;; TODO: Shared "save" interface for Trie?
 (defn save-tightly-packed-trie-to-file
