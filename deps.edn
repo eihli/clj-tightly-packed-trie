@@ -15,5 +15,4 @@
            :deploy {:replace-deps {slipset/deps-deploy {:mvn/version "0.1.5"}}
                     :exec-fn deps-deploy.deps-deploy/deploy
                     :exec-args {:installer :remote
-                                :artifact "TightlyPackedTrie.jar"
-                                :sign-releases? true}}}}
+                                :artifact "TightlyPackedTrie.jar"}}}}
