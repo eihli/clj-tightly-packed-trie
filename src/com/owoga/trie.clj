@@ -1,31 +1,4 @@
-(ns com.owoga.trie
-  (:require [clojure.zip :as zip]))
-
-(defn -trie->depth-first-post-order-traversable-zipperable-vector
-  ([path node]
-   (vec
-    (map
-     (fn [[k v]]
-       [(-trie->depth-first-post-order-traversable-zipperable-vector (conj path k) v)
-        (clojure.lang.MapEntry. (conj path k) (.value v))])
-     (.children- node)))))
-
-(defn trie->depth-first-post-order-traversable-zipperable-vector
-  [path node]
-  (if (.value node)
-    [(-trie->depth-first-post-order-traversable-zipperable-vector
-      path node)
-     (clojure.lang.MapEntry. path (.value node))]
-    (-trie->depth-first-post-order-traversable-zipperable-vector
-     path node)))
-
-(defn depth-first-post-order-traversable-zipperable-vector->trie
-  [cls [children [key node]]]
-  (sorted-map
-   (last key)
-   (cls (.key node) (.value node)
-        (into (sorted-map)
-              (map depth-first-post-order-traversable-zipperable-vector->trie children)))))
+(ns com.owoga.trie)
 
 (declare ->Trie)
 
@@ -61,47 +34,32 @@
      (fn [[k child]]
        (Trie. k
               (.value child)
-              #_(sorted-map)
               (.children- child)))
      children-))
 
   (lookup [trie k]
-    (loop [k' k
-           trie' trie]
+    (loop [k k
+           trie trie]
       (cond
         ;; Allows `update` to work the same as with maps... can use `fnil`.
         ;; (nil? trie') (throw (Exception. (format "Key not found: %s" k)))
-        (nil? trie') nil
-        (empty? k')
-        (Trie. (.key trie')
-               (.value trie')
-               (.children- trie'))
+        (nil? trie) nil
+        (empty? k)
+        (Trie. (.key trie)
+               (.value trie)
+               (.children- trie))
         :else (recur
-               (rest k')
-               (get (.children- trie') (first k'))))))
+               (rest k)
+               (get (.children- trie) (first k))))))
 
   clojure.lang.ILookup
   (valAt [trie k]
-    (loop [k' k
-           trie' trie]
-      (cond
-        ;; Allows `update` to work the same as with maps... can use `fnil`.
-        ;; (nil? trie') (throw (Exception. (format "Key not found: %s" k)))
-        (nil? trie') nil
-        (empty? k') (.value trie')
-        :else (recur
-               (rest k')
-               (get (.children- trie') (first k'))))))
+    (if-let [node (lookup trie k)]
+      (.value node)
+      nil))
 
   (valAt [trie k not-found]
-    (loop [k' k
-           trie' trie]
-      (cond
-        (nil? trie') not-found
-        (empty? k') (.value trie')
-        :else (recur
-               (rest k')
-               (get (.children- trie') (first k'))))))
+    (or (get trie k) not-found))
 
   clojure.lang.IPersistentCollection
   (cons [trie entry]
@@ -110,10 +68,8 @@
       (assoc trie (first entry) (.value (second entry)))
       :else
       (assoc trie (first entry) (second entry))))
-
   (empty [trie]
     (Trie. key nil (sorted-map)))
-
   (equiv [trie o]
     (and (= (.value trie)
             (.value o))
@@ -145,20 +101,39 @@
   (without [trie key]
     (-without trie key))
 
+  java.lang.Iterable
+  (iterator [trie]
+    (.iterator (seq trie)))
+
   clojure.lang.Counted
   (count [trie]
     (count (seq trie)))
 
   clojure.lang.Seqable
   (seq [trie]
-    (->> trie
-         ((partial trie->depth-first-post-order-traversable-zipperable-vector []))
-         zip/vector-zip
-         (iterate zip/next)
-         (take-while (complement zip/end?))
-         (map zip/node)
-         (filter (partial instance? clojure.lang.MapEntry))
-         (#(if (empty? %) nil %)))))
+    (let [step (fn step [path [[node & nodes] & stack] [parent & parents]]
+                 (cond
+                   node
+                   (step (conj path (.key node))
+                         (into (into stack (list nodes))
+                               (list (children node)))
+                         (cons node (cons parent parents)))
+                   (and parent (not= '() (.key parent)))
+                   (lazy-seq
+                    (cons (clojure.lang.MapEntry.
+                           (rest path)
+                           (.value parent))
+                          (step (pop path)
+                                stack
+                                parents)))
+                   :else nil))]
+      (step [] (list (list trie)) '()))))
+
+(defmethod print-method Trie [trie ^java.io.Writer w]
+  (print-method (into {} trie) w))
+
+(defmethod print-dup Trie [trie ^java.io.Writer w]
+  (print-ctor trie (fn [o w] (print-dup (into {} trie) w)) w))
 
 (defn make-trie
   ([]

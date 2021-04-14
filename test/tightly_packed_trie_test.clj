@@ -31,8 +31,17 @@
     (testing "ITrie"
       (testing "lookup"
         (is (= nil (trie/lookup empty-trie [1])))
+
+        ;; A `get` of a node returns the value at the node.
         (is (= 1 (get (trie/lookup initialized-trie [1]) [])))
-        (is (= 12 (get (trie/lookup initialized-trie [1]) [2]))))
+        (is (= 12 (get (trie/lookup initialized-trie [1]) [2])))
+
+        ;; A `seq` of a node is a depth-first post-order traversal of its descendants.
+        (is (= '([[2] 12] [[3] 13] [[] 1])
+               (seq (trie/lookup initialized-trie [1])))))
+
+      ;; The children of a node are only the immediate children and
+      ;; the root node's value is excluded.
       (testing "children"
         (is (= '(12 13)
                (map #(get % [])
@@ -61,9 +70,14 @@
                [[1 2]   nil]
                [[1 3 1] 131]
                [[1 3]   nil]
-               [[1]     nil]
-               [[]      nil])
-             (seq initialized-trie))))))
+               [[1]     nil])
+             (seq initialized-trie))))
+    (testing "Seq on lookup"
+      (is (= '([[1] 121]
+               [[2] 122]
+               [[3] 123]
+               [[]  nil])
+             (seq (trie/lookup initialized-trie [1 2])))))))
 
 (comment
   (let [trie (trie/make-trie '(1 2 3) 123 '(1 2 1) 121 '(1 2 2) 122 '(1 3 1) 131)
