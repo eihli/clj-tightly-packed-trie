@@ -30,12 +30,12 @@
   To decode: if the flag bit is not set, read the next byte and
   concat the last 7 bits of the current byte to
   the last 7 bits of the next byte."
-  [n]
-  (loop [b (list (bit-set (mod n 0x80) 7))
-         n (quot n 0x80)]
-    (if (zero? n)
-      (byte-array b)
-      (recur (cons (mod n 0x80) b) (quot n 0x80)))))
+  (#^bytes [n]
+   (loop [b (list (bit-set (mod n 0x80) 7))
+          n (quot n 0x80)]
+     (if (zero? n)
+       (byte-array b)
+       (recur (cons (mod n 0x80) b) (quot n 0x80))))))
 
 (comment
   (->> [0 1 2 127 128 129]
@@ -52,8 +52,8 @@
 (defn decode
   "Decode one variable-length-encoded number from a ByteBuffer,
   advancing the buffer's position to the byte following the encoded number."
-  [byte-buffer]
-  (loop [bytes (list (.get byte-buffer))]
+  ^Integer [^java.nio.ByteBuffer byte-buffer]
+  (loop [bytes (list ^Byte (.get byte-buffer))]
     (if (bit-test (first bytes) 7)
       (->> (cons (bit-clear (first bytes) 7) (rest bytes))
            reverse
@@ -75,29 +75,27 @@
 (def offset-byte? (complement key-byte?))
 
 (defn encode-key-to-tightly-packed-trie-index
-  [n]
+  #^bytes [n]
   (->> n encode (map #(bit-set % 7)) byte-array))
 
 (defn encode-offset-to-tightly-packed-trie-index
-  [n]
+  #^bytes [n]
   (->> n encode (map #(bit-clear % 7)) byte-array))
 
 (defn decode-number-from-tightly-packed-trie-index
-  ([byte-buffer]
-   (let [first-byte (.get byte-buffer)
-         continue? (fn []
-                     (and (.hasRemaining byte-buffer)
-                          (= (key-byte? (.get byte-buffer (.position byte-buffer)))
-                             (key-byte? first-byte))))]
-     (loop [bytes [first-byte]]
-       (if (continue?)
-         (recur (conj bytes (.get byte-buffer)))
-         (->> bytes
-              (map (partial bit-and 0xFF))
-              (map #(bit-clear % 7))
-              (apply (partial bm/combine-significant-bits 7))))))))
-
-(bm/to-binary-string 0xff)
+  [^java.nio.ByteBuffer byte-buffer]
+  (let [first-byte (.get byte-buffer)
+        continue? (fn []
+                    (and (.hasRemaining byte-buffer)
+                         (= (key-byte? (.get byte-buffer (.position byte-buffer)))
+                            (key-byte? first-byte))))]
+    (loop [bytes [first-byte]]
+      (if (continue?)
+        (recur (conj bytes (.get byte-buffer)))
+        (->> bytes
+             (map (partial bit-and 0xFF))
+             (map #(bit-clear % 7))
+             (apply (partial bm/combine-significant-bits 7)))))))
 
 (comment
   (let [byte-buffer (java.nio.ByteBuffer/allocate 64)]

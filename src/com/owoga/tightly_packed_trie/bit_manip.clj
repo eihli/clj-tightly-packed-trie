@@ -95,12 +95,12 @@
   ->                            0001010  1001011
   ->                              00010101001011
   ->                                        1355 (As a long...)"
-  [num-significant-bits & bytes]
-  (reduce
-   (fn [a b]
-     (bit-or b (bit-shift-left a num-significant-bits)))
-   0
-   bytes))
+  (#^bytes [num-significant-bits & bytes]
+   (reduce
+    (fn [a b]
+      (bit-or b (bit-shift-left a num-significant-bits)))
+    0
+    bytes)))
 
 (comment
   (let [b1 (bitstring->int "0110110")

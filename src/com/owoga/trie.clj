@@ -1,37 +1,16 @@
 (ns com.owoga.trie)
 
-(declare ->Trie)
-
-(defn -without
-  [trie [k & ks]]
-  (if k
-    (if-let [next-trie (get (.children- trie) k)]
-      (let [next-trie-without (-without next-trie ks)
-            new-trie (->Trie (.key trie)
-                             (.value trie)
-                             (if next-trie-without
-                               (assoc (.children- trie) k next-trie-without)
-                               (dissoc (.children- trie) k)))]
-        (if (and (empty? new-trie)
-                 (nil? (.value new-trie)))
-          nil
-          new-trie)))
-    (if (seq (.children- trie))
-      (->Trie
-       (.key trie)
-       nil
-       (.children- trie))
-      nil)))
+(declare -without)
 
 (defprotocol ITrie
   (children [self] "Immediate children of a node.")
-  (lookup [self ks] "Return node at key."))
+  (lookup [self ^clojure.lang.PersistentList ks] "Return node at key."))
 
-(deftype Trie [key value children-]
+(deftype Trie [key value ^clojure.lang.PersistentTreeMap children-]
   ITrie
   (children [trie]
     (map
-     (fn [[k child]]
+     (fn [[k ^Trie child]]
        (Trie. k
               (.value child)
               (.children- child)))
@@ -54,7 +33,7 @@
 
   clojure.lang.ILookup
   (valAt [trie k]
-    (if-let [node (lookup trie k)]
+    (if-let [^Trie node (lookup trie k)]
       (.value node)
       nil))
 
@@ -65,18 +44,18 @@
   (cons [trie entry]
     (cond
       (instance? Trie (second entry))
-      (assoc trie (first entry) (.value (second entry)))
+      (assoc trie (first entry) (.value ^Trie (second entry)))
       :else
       (assoc trie (first entry) (second entry))))
   (empty [trie]
     (Trie. key nil (sorted-map)))
   (equiv [trie o]
     (and (= (.value trie)
-            (.value o))
+            (.value ^Trie o))
          (= (.children- trie)
-            (.children- o))
+            (.children- ^Trie o))
          (= (.key trie)
-            (.key o))))
+            (.key ^Trie o))))
 
   clojure.lang.Associative
   (assoc [trie opath ovalue]
@@ -103,15 +82,15 @@
 
   java.lang.Iterable
   (iterator [trie]
-    (.iterator (seq trie)))
+    (.iterator ^clojure.lang.LazySeq (seq trie)))
 
   clojure.lang.Counted
   (count [trie]
     (count (seq trie)))
 
   clojure.lang.Seqable
-  (seq [trie]
-    (let [step (fn step [path [[node & nodes] & stack] [parent & parents]]
+  (seq ^clojure.lang.LazySeq [trie]
+    (let [step (fn step [path [[^Trie node & nodes] & stack] [^Trie parent & parents]]
                  (cond
                    node
                    (step (conj path (.key node))
@@ -128,6 +107,27 @@
                                 parents)))
                    :else nil))]
       (step [] (list (list trie)) '()))))
+
+(defn -without
+  [^Trie trie [k & ks]]
+  (if k
+    (if-let [next-trie (get (.children- trie) k)]
+      (let [next-trie-without (-without next-trie ks)
+            ^Trie new-trie (->Trie (.key trie)
+                                   (.value trie)
+                                   (if next-trie-without
+                                     (assoc (.children- trie) k next-trie-without)
+                                     (dissoc (.children- trie) k)))]
+        (if (and (empty? new-trie)
+                 (nil? (.value new-trie)))
+          nil
+          new-trie)))
+    (if (seq (.children- trie))
+      (->Trie
+       (.key trie)
+       nil
+       (.children- trie))
+      nil)))
 
 (defmethod print-method Trie [trie ^java.io.Writer w]
   (print-method (into {} trie) w))

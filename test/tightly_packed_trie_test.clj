@@ -6,14 +6,16 @@
              [com.owoga.tightly-packed-trie.encoding :as encoding]
              [com.owoga.tightly-packed-trie.bit-manip :as bm]))
 
-(defn value-encode-fn [v]
-  (if (or (= v ::tpt/root)
-          (nil? v))
-    (encode/encode 0)
-    (encode/encode v)))
+(set! *warn-on-reflection* true)
 
-(defn value-decode-fn [byte-buffer]
-  (let [v (encode/decode byte-buffer)]
+(defn value-encode-fn
+  (#^bytes [^Integer v]
+   (if (nil? v)
+     (encode/encode 0)
+     (encode/encode v))))
+
+(defn value-decode-fn [^java.nio.ByteBuffer byte-buffer]
+  (let [^Integer v (encode/decode byte-buffer)]
     (if (zero? v)
       nil
       v)))

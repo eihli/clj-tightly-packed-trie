@@ -3,8 +3,7 @@
             [com.owoga.tightly-packed-trie.encoding :as encoding]
             [clojure.java.io :as io]
             [clojure.string :as string]
-            [com.owoga.tightly-packed-trie.bit-manip :as bm]
-            [clojure.zip :as zip])
+            [com.owoga.tightly-packed-trie.bit-manip :as bm])
   (:import (java.io ByteArrayOutputStream ByteArrayInputStream
                     DataOutputStream DataInputStream)))
 
@@ -38,39 +37,8 @@
             (.limit ~byte-buffer original-limit#)
             (.position ~byte-buffer original-position#)))))
 
-(defn -trie->depth-first-post-order-traversable-zipperable-vector
-  [path node decode-value-fn]
-  (vec
-   (map
-    (fn [child]
-      [(-trie->depth-first-post-order-traversable-zipperable-vector
-        (conj path (.key child))
-        child
-        decode-value-fn)
-       (wrap-byte-buffer
-        (.byte-buffer child)
-        (.limit (.byte-buffer child) (.limit child))
-        (.position (.byte-buffer child) (.address child))
-        (clojure.lang.MapEntry.
-         (conj path (.key child))
-         (decode-value-fn (.byte-buffer child))))])
-    (trie/children node))))
-
-(defn trie->depth-first-post-order-traversable-zipperable-vector
-  [path node decode-value-fn]
-  (let [byte-buffer (.byte-buffer node)
-        val (wrap-byte-buffer
-             byte-buffer
-             (.limit byte-buffer (.limit node))
-             (.position byte-buffer (.address node))
-             (decode-value-fn byte-buffer))]
-    [(-trie->depth-first-post-order-traversable-zipperable-vector
-      path
-      node
-      decode-value-fn)
-     (clojure.lang.MapEntry. path val)]))
-
-(defn rewind-to-key [bb stop]
+(defn rewind-to-key [^java.nio.ByteBuffer bb
+                     ^Integer stop]
   (loop []
     (let [current (.get bb (.position bb))
           previous (.get bb (dec (.position bb)))]
@@ -81,18 +49,11 @@
         (do (.position bb (dec (.position bb)))
             (recur))))))
 
-(defn forward-to-key [bb stop]
-  (loop []
-    (if (or (= stop (.position bb))
-            (and (encoding/key-byte? (.get bb (.position bb)))
-                 (encoding/offset-byte?
-                  (.get bb (inc (.position bb))))))
-      bb
-      (do (.position bb (inc (.position bb)))
-          (recur)))))
-
 (defn find-key-in-index
-  [bb target-key max-address not-found]
+  [^java.nio.ByteBuffer bb
+   ^Integer target-key
+   ^Integer max-address
+   not-found]
   (.limit bb max-address)
   (let [key
         (loop [previous-key nil
@@ -100,9 +61,9 @@
                max-position max-address]
           (if (zero? (- max-position min-position))
             not-found
-            (let [mid-position (+ min-position (quot (- max-position min-position) 2))]
+            (let [^Integer mid-position (+ min-position (quot (- max-position min-position) 2))]
               (.position bb mid-position)
-              (let [bb (rewind-to-key bb min-position)
+              (let [^java.nio.ByteBuffer bb (rewind-to-key bb min-position)
                     current-key
                     (encoding/decode-number-from-tightly-packed-trie-index bb)]
                 (cond
@@ -144,14 +105,13 @@
     {:id value
      :count freq}))
 
-(defn -value [trie value-decode-fn]
-  (wrap-byte-buffer
-   (.byte-buffer trie)
-   (.limit (.byte-buffer trie) (.limit trie))
-   (.position (.byte-buffer trie) (.address trie))
-   (value-decode-fn (.byte-buffer trie))))
+(declare -value)
 
-(deftype TightlyPackedTrie [byte-buffer key address limit value-decode-fn]
+(deftype TightlyPackedTrie [^java.nio.ByteBuffer byte-buffer
+                            ^Integer key
+                            ^Integer address
+                            ^Integer limit
+                            value-decode-fn]
   trie/ITrie
   (lookup [self ks]
     (wrap-byte-buffer
@@ -183,8 +143,8 @@
      (.position byte-buffer address)
      (let [val (value-decode-fn byte-buffer)
            size-of-index (encoding/decode byte-buffer)]
-       (.limit byte-buffer (+ (.position byte-buffer)
-                              size-of-index))
+       (.limit byte-buffer ^Integer (+ (.position byte-buffer)
+                                       size-of-index))
        (loop [children []]
          (if (= (.position byte-buffer) (.limit byte-buffer))
            children
@@ -202,7 +162,7 @@
 
   clojure.lang.ILookup
   (valAt [self ks]
-    (if-let [node (trie/lookup self ks)]
+    (if-let [^TightlyPackedTrie node (trie/lookup self ks)]
       (-value node value-decode-fn)
       nil))
   (valAt [self ks not-found]
@@ -214,7 +174,9 @@
 
   clojure.lang.Seqable
   (seq [trie]
-    (let [step (fn step [path [[node & nodes] & stack] [parent & parents]]
+    (let [step (fn step [^clojure.lang.PersistentList path
+                         [[^TightlyPackedTrie node & nodes] & stack]
+                         [^TightlyPackedTrie parent & parents]]
                  (cond
                    node
                    (step (conj path (.key node))
@@ -225,17 +187,25 @@
                    (lazy-seq
                     (cons (clojure.lang.MapEntry.
                            (rest path)
-                           (let [byte-buffer (.byte-buffer parent)]
+                           (let [^java.nio.ByteBuffer byte-buffer (.byte-buffer parent)]
                              (wrap-byte-buffer
                               byte-buffer
-                              (.limit byte-buffer (.limit parent))
-                              (.position byte-buffer (.address parent))
+                              (.limit byte-buffer ^Integer (.limit parent))
+                              (.position byte-buffer ^Integer (.address parent))
                               (value-decode-fn byte-buffer))))
                           (step (pop path)
                                 stack
                                 parents)))
                    :else nil))]
       (step [] (list (list trie)) '()))))
+
+(defn -value [^TightlyPackedTrie trie value-decode-fn]
+  (let [^java.nio.ByteBuffer byte-buffer (.byte-buffer trie)]
+    (wrap-byte-buffer
+     byte-buffer
+     (.limit byte-buffer ^Integer (.limit trie))
+     (.position byte-buffer ^Integer (.address trie))
+     (value-decode-fn byte-buffer))))
 
 (defmethod print-method TightlyPackedTrie [trie ^java.io.Writer w]
   (print-method (into {} trie) w))
@@ -244,17 +214,19 @@
   (print-ctor trie (fn [o w] (print-dup (into {} trie) w)) w))
 
 (defn tightly-packed-trie
-  [trie value-encode-fn value-decode-fn]
-  (let [baos (ByteArrayOutputStream.)]
+  [^TightlyPackedTrie trie
+   value-encode-fn
+   value-decode-fn]
+  (let [^ByteArrayOutputStream baos (ByteArrayOutputStream.)]
     (loop [nodes (seq trie)
            current-offset 8
            previous-depth 0
            child-indexes []]
-      (let [current-node (first nodes)
+      (let [^TightlyPackedTrie current-node (first nodes)
             current-depth (count (first current-node))]
         (cond
           (empty? nodes)
-          (let [child-index (last child-indexes)
+          (let [^clojure.lang.PersistentVector child-index (last child-indexes)
                 child-index-baos (ByteArrayOutputStream.)
                 _ (->> child-index
                        (run!
@@ -269,12 +241,12 @@
                 child-index-byte-array (.toByteArray child-index-baos)
                 size-of-child-index (encoding/encode (count child-index-byte-array))
                 root-address current-offset
-                value (value-encode-fn 0)]
+                value #^bytes (value-encode-fn 0)]
             (.write baos value)
             (.write baos size-of-child-index)
             (.write baos child-index-byte-array)
-            (let [ba (.toByteArray baos)
-                  byte-buf (java.nio.ByteBuffer/allocate (+ 8 (count ba)))]
+            (let [#^bytes ba (.toByteArray baos)
+                  ^java.nio.ByteBuffer byte-buf (java.nio.ByteBuffer/allocate (+ 8 (count ba)))]
               (do (.putLong byte-buf root-address)
                   (.put byte-buf ba)
                   (.rewind byte-buf)
@@ -289,7 +261,7 @@
           ;; Process index of children.
           (> previous-depth current-depth)
           (let [[k v] (first nodes)
-                value (value-encode-fn v)
+                value #^bytes (value-encode-fn v)
                 child-index (last child-indexes)
                 child-index-baos (ByteArrayOutputStream.)
                 _ (->> child-index
@@ -322,7 +294,7 @@
           ;; Start keeping track of new children index
           :else
           (let [[k v] (first nodes)
-                value (value-encode-fn v)
+                value #^bytes (value-encode-fn v)
                 size-of-child-index (encoding/encode 0)
                 child-indexes (into child-indexes
                                     (vec (repeat (- current-depth previous-depth) [])))
@@ -350,7 +322,7 @@
   (with-open [i (io/input-stream filepath)
               baos (ByteArrayOutputStream.)]
     (io/copy i baos)
-    (let [byte-buffer (java.nio.ByteBuffer/wrap (.toByteArray baos))]
+    (let [^java.nio.ByteBuffer byte-buffer (java.nio.ByteBuffer/wrap (.toByteArray baos))]
       (.rewind byte-buffer)
       (->TightlyPackedTrie
        byte-buffer
