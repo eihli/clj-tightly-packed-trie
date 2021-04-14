@@ -61,7 +61,6 @@
      (fn [[k child]]
        (Trie. k
               (.value child)
-              #_(sorted-map)
               (.children- child)))
      children-))
 
@@ -151,14 +150,21 @@
 
   clojure.lang.Seqable
   (seq [trie]
-    (->> trie
-         ((partial trie->depth-first-post-order-traversable-zipperable-vector []))
-         zip/vector-zip
-         (iterate zip/next)
-         (take-while (complement zip/end?))
-         (map zip/node)
-         (filter (partial instance? clojure.lang.MapEntry))
-         (#(if (empty? %) nil %)))))
+    (let [step (fn step [path [[node & nodes] & stack] [parent & parents]]
+                 (cond
+                   node
+                   (step (conj path (.key node))
+                         (into (into stack (list nodes))
+                               (list (children node)))
+                         (cons node (cons parent parents)))
+                   (and parent (not= '() (.key parent)))
+                   (lazy-seq
+                    (cons [(rest path) (.value parent)]
+                          (step (pop path)
+                                stack
+                                parents)))
+                   :else nil))]
+      (step [] (list (list trie)) '()))))
 
 (defn make-trie
   ([]

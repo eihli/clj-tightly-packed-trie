@@ -13,9 +13,9 @@
     (testing "dissoc"
       (let [expected (-> (trie/make-trie)
                          (assoc '(1) 1))
-            trie (-> (trie/make-trie)
-                     (assoc '(1) 1)
-                     (assoc '(1 3) 13))]
+            trie     (-> (trie/make-trie)
+                         (assoc '(1) 1)
+                         (assoc '(1 3) 13))]
         (is (= expected (dissoc trie '(1 3))))))
     (testing "ILookup"
       (is (= 12 (get initialized-trie '(1 2))))
@@ -30,5 +30,6 @@
       (is (= 2 (count initialized-trie))))
     (testing "Seqable"
       (is (= '([[1 2] 12] [[1] nil])
-             (seq initialized-trie))))))
-
+             (seq initialized-trie)))
+      (is (= '([[1 2] 12] [[1] 1])
+             (seq (assoc initialized-trie '(1) 1)))))))

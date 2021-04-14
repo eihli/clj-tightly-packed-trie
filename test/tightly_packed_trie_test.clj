@@ -31,8 +31,17 @@
     (testing "ITrie"
       (testing "lookup"
         (is (= nil (trie/lookup empty-trie [1])))
+
+        ;; A `get` of a node returns the value at the node.
         (is (= 1 (get (trie/lookup initialized-trie [1]) [])))
-        (is (= 12 (get (trie/lookup initialized-trie [1]) [2]))))
+        (is (= 12 (get (trie/lookup initialized-trie [1]) [2])))
+
+        ;; A `seq` of a node is a depth-first post-order traversal of its descendants.
+        (is (= '([[2] 12] [[3] 13] [[] 1])
+               (seq (trie/lookup initialized-trie [1])))))
+
+      ;; The children of a node are only the immediate children and
+      ;; the root node's value is excluded.
       (testing "children"
         (is (= '(12 13)
                (map #(get % [])

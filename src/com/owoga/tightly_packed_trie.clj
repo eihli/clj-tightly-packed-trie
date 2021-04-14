@@ -208,19 +208,33 @@
   (valAt [self ks not-found]
     (or (get self ks) not-found))
 
+  clojure.lang.Counted
+  (count [trie]
+    (count (seq trie)))
+
   clojure.lang.Seqable
   (seq [trie]
-    (->> trie
-         (#(trie->depth-first-post-order-traversable-zipperable-vector
-            []
-            %
-            value-decode-fn))
-         zip/vector-zip
-         (iterate zip/next)
-         (take-while (complement zip/end?))
-         (map zip/node)
-         (filter (partial instance? clojure.lang.MapEntry))
-         (#(if (empty? %) nil %)))))
+    (let [step (fn step [path [[node & nodes] & stack] [parent & parents]]
+                 (cond
+                   node
+                   (step (conj path (.key node))
+                         (into (into stack (list nodes))
+                               (list (trie/children node)))
+                         (cons node (cons parent parents)))
+                   (and parent (not= 0 (.key parent)))
+                   (lazy-seq
+                    (cons [(rest path)
+                           (let [byte-buffer (.byte-buffer parent)]
+                             (wrap-byte-buffer
+                              byte-buffer
+                              (.limit byte-buffer (.limit parent))
+                              (.position byte-buffer (.address parent))
+                              (value-decode-fn byte-buffer)))]
+                          (step (pop path)
+                                stack
+                                parents)))
+                   :else nil))]
+      (step [] (list (list trie)) '()))))
 
 (defn tightly-packed-trie
   [trie value-encode-fn value-decode-fn]
