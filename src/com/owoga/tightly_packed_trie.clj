@@ -223,18 +223,25 @@
                          (cons node (cons parent parents)))
                    (and parent (not= 0 (.key parent)))
                    (lazy-seq
-                    (cons [(rest path)
+                    (cons (clojure.lang.MapEntry.
+                           (rest path)
                            (let [byte-buffer (.byte-buffer parent)]
                              (wrap-byte-buffer
                               byte-buffer
                               (.limit byte-buffer (.limit parent))
                               (.position byte-buffer (.address parent))
-                              (value-decode-fn byte-buffer)))]
+                              (value-decode-fn byte-buffer))))
                           (step (pop path)
                                 stack
                                 parents)))
                    :else nil))]
       (step [] (list (list trie)) '()))))
+
+(defmethod print-method TightlyPackedTrie [trie ^java.io.Writer w]
+  (print-method (into {} trie) w))
+
+(defmethod print-dup TightlyPackedTrie [trie ^java.io.Writer w]
+  (print-ctor trie (fn [o w] (print-dup (into {} trie) w)) w))
 
 (defn tightly-packed-trie
   [trie value-encode-fn value-decode-fn]

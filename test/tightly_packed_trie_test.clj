@@ -70,9 +70,14 @@
                [[1 2]   nil]
                [[1 3 1] 131]
                [[1 3]   nil]
-               [[1]     nil]
-               [[]      nil])
-             (seq initialized-trie))))))
+               [[1]     nil])
+             (seq initialized-trie))))
+    (testing "Seq on lookup"
+      (is (= '([[1] 121]
+               [[2] 122]
+               [[3] 123]
+               [[]  nil])
+             (seq (trie/lookup initialized-trie [1 2])))))))
 
 (comment
   (let [trie (trie/make-trie '(1 2 3) 123 '(1 2 1) 121 '(1 2 2) 122 '(1 3 1) 131)
