@@ -222,7 +222,7 @@
            current-offset 8
            previous-depth 0
            child-indexes []]
-      (let [^TightlyPackedTrie current-node (first nodes)
+      (let [^trie/Trie current-node (first nodes)
             current-depth (count (first current-node))]
         (cond
           (empty? nodes)
@@ -314,8 +314,10 @@
 ;; TODO: Shared "save" interface for Trie?
 (defn save-tightly-packed-trie-to-file
   [filepath trie]
-  (with-open [o (io/output-stream filepath)]
-    (.write o (.array (.byte-buffer trie)))))
+  (with-open [o (java.io.FileOutputStream. filepath)]
+    (.rewind (.byte-buffer trie))
+    (.write (.getChannel o)
+            (.byte-buffer trie))))
 
 (defn load-tightly-packed-trie-from-file
   [filepath value-decode-fn]

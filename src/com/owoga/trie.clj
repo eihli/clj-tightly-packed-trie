@@ -2,9 +2,117 @@
 
 (declare -without)
 
+(defn integer-compare [m n]
+  (- m n))
+
+(defn fast-sorted-map [& kvs]
+  (clojure.lang.PersistentTreeMap/create integer-compare kvs))
+
 (defprotocol ITrie
   (children [self] "Immediate children of a node.")
   (lookup [self ^clojure.lang.PersistentList ks] "Return node at key."))
+
+(deftype IntKeyTrie [key value ^clojure.lang.PersistentTreeMap children-]
+  ITrie
+  (children [trie]
+    (map
+     (fn [[k ^IntKeyTrie child]]
+       (IntKeyTrie. k
+              (.value child)
+              (.children- child)))
+     children-))
+
+  (lookup [trie k]
+    (loop [k k
+           trie trie]
+      (cond
+        ;; Allows `update` to work the same as with maps... can use `fnil`.
+        ;; (nil? trie') (throw (Exception. (format "Key not found: %s" k)))
+        (nil? trie) nil
+        (empty? k)
+        (IntKeyTrie. (.key trie)
+               (.value trie)
+               (.children- trie))
+        :else (recur
+               (rest k)
+               (get (.children- trie) (first k))))))
+
+  clojure.lang.ILookup
+  (valAt [trie k]
+    (if-let [^IntKeyTrie node (lookup trie k)]
+      (.value node)
+      nil))
+
+  (valAt [trie k not-found]
+    (or (get trie k) not-found))
+
+  clojure.lang.IPersistentCollection
+  (cons [trie entry]
+    (cond
+      (instance? IntKeyTrie (second entry))
+      (assoc trie (first entry) (.value ^IntKeyTrie (second entry)))
+      :else
+      (assoc trie (first entry) (second entry))))
+  (empty [trie]
+    (IntKeyTrie. key nil (fast-sorted-map)))
+  (equiv [trie o]
+    (and (= (.value trie)
+            (.value ^IntKeyTrie o))
+         (= (.children- trie)
+            (.children- ^IntKeyTrie o))
+         (= (.key trie)
+            (.key ^IntKeyTrie o))))
+
+  clojure.lang.Associative
+  (assoc [trie opath ovalue]
+    (if (empty? opath)
+      (IntKeyTrie. key ovalue children-)
+      (IntKeyTrie. key value (update
+                        children-
+                        (first opath)
+                        (fnil assoc (IntKeyTrie. (first opath) nil (fast-sorted-map)))
+                        (rest opath)
+                        ovalue))))
+  (entryAt [trie key]
+    (clojure.lang.MapEntry. key (get trie key)))
+  (containsKey [trie key]
+    (boolean (get trie key)))
+
+  clojure.lang.IPersistentMap
+  (assocEx [trie key val]
+    (if (contains? trie key)
+      (throw (Exception. (format "Value already exists at key %s." key)))
+      (assoc trie key val)))
+  (without [trie key]
+    (-without trie key))
+
+  java.lang.Iterable
+  (iterator [trie]
+    (.iterator ^clojure.lang.LazySeq (seq trie)))
+
+  clojure.lang.Counted
+  (count [trie]
+    (count (seq trie)))
+
+  clojure.lang.Seqable
+  (seq ^clojure.lang.LazySeq [trie]
+    (let [step (fn step [path [[^IntKeyTrie node & nodes] & stack] [^IntKeyTrie parent & parents]]
+                 (cond
+                   node
+                   (step (conj path (.key node))
+                         (into (into stack (list nodes))
+                               (list (children node)))
+                         (cons node (cons parent parents)))
+                   (and parent (not= '() (.key parent)))
+                   (lazy-seq
+                    (cons (clojure.lang.MapEntry.
+                           (rest path)
+                           (.value parent))
+                          (step (pop path)
+                                stack
+                                parents)))
+                   :else nil))]
+      (step [] (list (list trie)) '()))))
 
 (deftype Trie [key value ^clojure.lang.PersistentTreeMap children-]
   ITrie
