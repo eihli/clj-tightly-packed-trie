@@ -27,6 +27,7 @@
       (->Vose N alias prob)
       (let [^doubles ps (->> dist
                              (map (partial * N))
+                             (map float)
                              (into-array Double/TYPE))
 
             [small large] (loop [i 0
@@ -65,7 +66,7 @@
         (->Vose N alias prob)))))
 
 (defn from-weights [ws]
-  (let [tot (reduce + 0.0 ws)]
+  (let [tot (apply + ws)]
     (assert (> tot 0) "Can't Vose RNG from 0 weights.")
     (let [dist (map #(/ % tot) ws)]
       (make-vose (vec dist)))))
