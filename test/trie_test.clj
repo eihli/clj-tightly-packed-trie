@@ -33,3 +33,16 @@
              (seq initialized-trie)))
       (is (= '([[1 2] 12] [[1] 1])
              (seq (assoc initialized-trie '(1) 1)))))))
+
+(deftest children-at-depth-tests
+  (let [initialized-trie (->> (trie/make-trie '(1) 1 '(1 2 3) 123 '(1 2 1) 121 '(1 2 2) 122 '(1 3 1) 131
+                                              '(1 2 3 4) 1234
+                                              '(1 2 3 4 5 6) 123456))]
+    (testing "children at depth"
+      (is (= '([(1) 1])
+             (trie/children-at-depth initialized-trie 0)))
+      (is (= '([(1 2 3 4 5 6) 123456]
+               [(1 2 3 4) 1234])
+             (trie/children-at-depth initialized-trie 4 6)))
+      (is (= nil (trie/children-at-depth initialized-trie -1)))
+      (is (= nil (trie/children-at-depth initialized-trie 5 4))))))

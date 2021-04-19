@@ -7,6 +7,8 @@
   (:import (java.io ByteArrayOutputStream ByteArrayInputStream
                     DataOutputStream DataInputStream)))
 
+#_(set! *warn-on-reflection* true)
+
 ;; A trie data structure that can be converted to
 ;; a contiguous array of bytes while maintaining
 ;; efficient lookups.
@@ -106,6 +108,7 @@
      :count freq}))
 
 (declare -value)
+(declare children-)
 
 (deftype TightlyPackedTrie [^java.nio.ByteBuffer byte-buffer
                             ^Integer key
@@ -137,28 +140,7 @@
                         value-decode-fn)]
              (trie/lookup child (rest ks))))))))
   (children [self]
-    (wrap-byte-buffer
-     byte-buffer
-     (.limit byte-buffer limit)
-     (.position byte-buffer address)
-     (let [val (value-decode-fn byte-buffer)
-           size-of-index (encoding/decode byte-buffer)]
-       (.limit byte-buffer ^Integer (+ (.position byte-buffer)
-                                       size-of-index))
-       (loop [children []]
-         (if (= (.position byte-buffer) (.limit byte-buffer))
-           children
-           (let [child-key (encoding/decode-number-from-tightly-packed-trie-index byte-buffer)
-                 child-offset (encoding/decode-number-from-tightly-packed-trie-index byte-buffer)]
-             (recur
-              (conj
-               children
-               (TightlyPackedTrie.
-                byte-buffer
-                child-key
-                (- address child-offset)
-                (.capacity byte-buffer)
-                value-decode-fn)))))))))
+    (children- byte-buffer address limit value-decode-fn))
 
   clojure.lang.ILookup
   (valAt [self ks]
@@ -206,6 +188,34 @@
      (.limit byte-buffer ^Integer (.limit trie))
      (.position byte-buffer ^Integer (.address trie))
      (value-decode-fn byte-buffer))))
+
+(defn children- [^java.nio.ByteBuffer
+                 byte-buffer
+                 ^Integer address
+                 ^Integer limit
+                 value-decode-fn]
+  (wrap-byte-buffer
+   byte-buffer
+   (.limit byte-buffer limit)
+   (.position byte-buffer address)
+   (let [val (value-decode-fn byte-buffer)
+         size-of-index (encoding/decode byte-buffer)]
+     (.limit byte-buffer ^Integer (+ (.position byte-buffer)
+                                     size-of-index))
+     (loop [children []]
+       (if (= (.position byte-buffer) (.limit byte-buffer))
+         children
+         (let [child-key (encoding/decode-number-from-tightly-packed-trie-index byte-buffer)
+               child-offset (encoding/decode-number-from-tightly-packed-trie-index byte-buffer)]
+           (recur
+            (conj
+             children
+             (TightlyPackedTrie.
+              byte-buffer
+              child-key
+              (- address child-offset)
+              (.capacity byte-buffer)
+              value-decode-fn)))))))))
 
 (defmethod print-method TightlyPackedTrie [trie ^java.io.Writer w]
   (print-method (into {} trie) w))

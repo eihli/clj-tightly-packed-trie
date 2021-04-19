@@ -253,6 +253,17 @@
     (make-trie)
     (partition 2 ks))))
 
+(defn make-trie'
+  "nil root key instead of empty list, clearer interface"
+  ([]
+   (->Trie nil nil (sorted-map)))
+  ([& ks]
+   (reduce
+    (fn [t kv]
+      (conj t kv))
+    (make-trie)
+    (partition 2 ks))))
+
 (comment
   (make-trie "do" "do" "dot" "dot" "dog" "dog")
   ;; => {[\d \o \g] "dog", [\d \o \t] "dot", [\d \o] "do"}
@@ -282,3 +293,33 @@
        (into (make-trie)))
   ;; => {[1 2 2] 244, [1 2 3] 246, [1 2 4] 248, [1 2] 24}
   )
+
+(defn trie->children-at-depth
+  [[[node & nodes] & stack] [parent & parents] min-depth max-depth]
+  (let [current-depth (count parents)]
+    (cond
+      (and node (< current-depth max-depth))
+      (trie->children-at-depth
+       (into (into stack (list nodes))
+             (list (children node)))
+       (cons node (if parent (cons parent parents) nil))
+       min-depth
+       max-depth)
+      (and parent (some? (get parent [])) (>= current-depth min-depth))
+      (lazy-seq
+       (cons (clojure.lang.MapEntry.
+              (rest (reverse (map #(.key %) (cons parent parents))))
+              (get parent []))
+             (trie->children-at-depth stack (sequence parents) min-depth max-depth)))
+      parent
+      (trie->children-at-depth stack (sequence parents) min-depth max-depth)
+      :else
+      nil)))
+
+(defn children-at-depth
+  ([trie depth]
+   (children-at-depth trie depth (inc depth)))
+  ([trie min-depth max-depth]
+   (trie->children-at-depth
+    `((~trie)) '() min-depth max-depth)))
+
