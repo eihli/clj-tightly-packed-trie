@@ -140,7 +140,7 @@
                         value-decode-fn)]
              (trie/lookup child (rest ks))))))))
   (children [self]
-    (children-memo byte-buffer address limit value-decode-fn))
+    (children- byte-buffer address limit value-decode-fn))
 
   clojure.lang.ILookup
   (valAt [self ks]
@@ -322,6 +322,28 @@
                          (conj current-child-index
                                [(last k)
                                 current-offset])))))))))
+
+(defn trie->children-at-depth
+  [[[node & nodes] & stack] [parent & parents] min-depth max-depth]
+  (let [current-depth (count (cons parent parents))]
+    (cond
+      (and node (< current-depth (dec max-depth)))
+      (trie->children-at-depth
+       (into (into stack (list nodes))
+             (list (trie/children node)))
+       (cons node (if parent (cons parent parents) nil))
+       min-depth
+       max-depth)
+      (and parent (>= current-depth min-depth))
+      (lazy-seq
+       (cons (clojure.lang.MapEntry.
+              (rest (reverse (map #(.key %) (cons parent parents))))
+              (get parent []))
+             (trie->children-at-depth stack (sequence parents) min-depth max-depth)))
+      parent
+      (trie->children-at-depth stack (sequence parents) min-depth max-depth)
+      :else
+      nil)))
 
 ;; TODO: Shared "save" interface for Trie?
 (defn save-tightly-packed-trie-to-file

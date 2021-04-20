@@ -94,4 +94,11 @@
       (encode/decode-number-from-tightly-packed-trie-index byte-buffer)
       (encode/decode-number-from-tightly-packed-trie-index byte-buffer)]))
 
+
+
+
+  (let [trie (trie/make-trie '(1) 1 '(1 2) 12 '(1 3) 13 '(2 3) 23 '(5) 5 '(6 7 8) 678)
+        tpt (tpt/tightly-packed-trie trie value-encode-fn value-decode-fn)]
+    (tpt/trie->children-at-depth (list (list tpt)) '() 3 5))
+
   )

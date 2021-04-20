@@ -253,6 +253,17 @@
     (make-trie)
     (partition 2 ks))))
 
+(defn make-trie'
+  "nil root key instead of empty list, clearer interface"
+  ([]
+   (->Trie nil nil (sorted-map)))
+  ([& ks]
+   (reduce
+    (fn [t kv]
+      (conj t kv))
+    (make-trie)
+    (partition 2 ks))))
+
 (comment
   (make-trie "do" "do" "dot" "dot" "dog" "dog")
   ;; => {[\d \o \g] "dog", [\d \o \t] "dot", [\d \o] "do"}
@@ -282,3 +293,82 @@
        (into (make-trie)))
   ;; => {[1 2 2] 244, [1 2 3] 246, [1 2 4] 248, [1 2] 24}
   )
+
+(defn trie->children-at-depth
+  [stack min-depth max-depth]
+  (let [current-depth (dec (count stack))
+        current-children (first stack)]
+    (cond
+      ;; done
+      (and (empty? current-children)
+           (empty? (rest stack)))
+      nil
+
+      (empty? current-children)
+      (trie->children-at-depth
+       (rest stack) min-depth max-depth)
+
+      ;; need to traverse deeper
+      (and (< current-depth min-depth)
+           (< current-depth (dec max-depth)))
+      (trie->children-at-depth
+       (cons (trie/children (first current-children))
+             (cons (rest current-children)
+                   (rest stack)))
+       min-depth
+       max-depth)
+
+      ;; include result and traverse deeper
+      (and (>= current-depth min-depth)
+           (< current-depth (dec max-depth)))
+      (let [children-of-current-child (trie/children (first current-children))
+            path (->> stack
+                      (map first)
+                      (remove nil?)
+                      (map #(.key %))
+                      (remove #(and (seq? %) (empty? %)))
+                      vec)]
+        (if (empty? children-of-current-child)
+          (trie->children-at-depth
+           (cons
+            children-of-current-child
+            (cons
+             (rest current-children)
+             (rest stack)))
+           min-depth
+           max-depth)
+          (lazy-cat
+           (map
+            #(clojure.lang.MapEntry.
+              (conj path (.key %))
+              (.value %))
+            (remove #(nil? (get % [])) children-of-current-child))
+           (trie->children-at-depth
+            (cons
+             children-of-current-child
+             (cons
+              (rest current-children)
+              (rest stack)))
+            min-depth
+            max-depth))))
+
+      ;; include result but don't traverse deeper
+      (and (>= current-depth min-depth)
+           (= current-depth (dec max-depth)))
+      (let [path (->> stack
+                      (map first)
+                      (remove nil?)
+                      (map #(.key %))
+                      (remove #(and (seq? %) (empty? %)))
+                      vec)]
+        (lazy-cat
+         (map
+          #(clojure.lang.MapEntry.
+            (conj path (.key %))
+            (.value %))
+          (remove #(nil? (get % [])) (trie/children (first current-children))))
+         (trie->children-at-depth
+          (cons (rest current-children)
+                (rest stack))
+          min-depth
+          max-depth))))))
