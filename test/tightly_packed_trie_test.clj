@@ -81,6 +81,18 @@
                [[]  nil])
              (seq (trie/lookup initialized-trie [1 2])))))))
 
+(deftest children-at-depth-tests
+  (let [initialized-trie (->> (trie/make-trie '(1) 1 '(1 2 3) 123 '(1 2 1) 121 '(1 2 2) 122 '(1 3 1) 131
+                                              '(1 2 3 4) 1234
+                                              '(1 2 3 4 5 6) 123456)
+                              (#(tpt/tightly-packed-trie % value-encode-fn value-decode-fn)))]
+    (testing "children at depth"
+      (is (= '([(1) 1])
+             (trie/children-at-depth initialized-trie 0)))
+      (is (= '([(1 2 3 4 5 6) 123456]
+               [(1 2 3 4) 1234])
+             (trie/children-at-depth initialized-trie 4 6))))))
+
 (comment
   (let [trie (trie/make-trie '(1 2 3) 123 '(1 2 1) 121 '(1 2 2) 122 '(1 3 1) 131)
         tpt (tpt/tightly-packed-trie trie value-encode-fn value-decode-fn)
@@ -94,11 +106,18 @@
       (encode/decode-number-from-tightly-packed-trie-index byte-buffer)
       (encode/decode-number-from-tightly-packed-trie-index byte-buffer)]))
 
-
-
+  (let [trie (trie/make-trie '(1) 1 '(1 2) 12 '(1 3) 13 '(2 3) 23 '(5) 5 '(6 7 8) 678)
+        tpt (tpt/tightly-packed-trie trie value-encode-fn value-decode-fn)]
+    (get tpt []))
 
   (let [trie (trie/make-trie '(1) 1 '(1 2) 12 '(1 3) 13 '(2 3) 23 '(5) 5 '(6 7 8) 678)
         tpt (tpt/tightly-packed-trie trie value-encode-fn value-decode-fn)]
     (tpt/trie->children-at-depth (list (list tpt)) '() 3 5))
 
   )
+
+(let [trie (trie/make-trie '(1 2 3) 123 '(1 2 1) 121 '(1 2 2) 122 '(1 3 1) 131)
+      initialized-trie (-> trie
+                            (tpt/tightly-packed-trie value-encode-fn value-decode-fn))]
+  [initialized-trie
+   trie])
