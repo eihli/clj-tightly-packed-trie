@@ -6,7 +6,7 @@
              [com.owoga.tightly-packed-trie.encoding :as encoding]
              [com.owoga.tightly-packed-trie.bit-manip :as bm]))
 
-(set! *warn-on-reflection* true)
+#_(set! *warn-on-reflection* true)
 
 (defn value-encode-fn
   (#^bytes [^Integer v]
@@ -97,6 +97,7 @@
   (let [trie (trie/make-trie '(1 2 3) 123 '(1 2 1) 121 '(1 2 2) 122 '(1 3 1) 131)
         tpt (tpt/tightly-packed-trie trie value-encode-fn value-decode-fn)
         byte-buffer (.byte-buffer tpt)]
+
     (tpt/wrap-byte-buffer
      byte-buffer
      (.limit byte-buffer (.limit tpt))
@@ -116,8 +117,3 @@
 
   )
 
-(let [trie (trie/make-trie '(1 2 3) 123 '(1 2 1) 121 '(1 2 2) 122 '(1 3 1) 131)
-      initialized-trie (-> trie
-                            (tpt/tightly-packed-trie value-encode-fn value-decode-fn))]
-  [initialized-trie
-   trie])
