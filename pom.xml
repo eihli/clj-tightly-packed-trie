@@ -4,7 +4,7 @@
   <packaging>jar</packaging>
   <groupId>com.owoga</groupId>
   <artifactId>tightly-packed-trie</artifactId>
-  <version>0.2.3</version>
+  <version>0.3.0</version>
   <name>tightly-packed-trie</name>
   <scm>
     <connection>scm:git:git://github.com/eihli/clj-tightly-packed-trie.git</connection>
@@ -24,19 +24,9 @@
       <version>2.2.0</version>
     </dependency>
     <dependency>
-      <groupId>org.clojure</groupId>
-      <artifactId>data.fressian</artifactId>
-      <version>1.0.0</version>
-    </dependency>
-    <dependency>
       <groupId>com.taoensso</groupId>
       <artifactId>timbre</artifactId>
       <version>4.10.0</version>
-    </dependency>
-    <dependency>
-      <groupId>com.taoensso</groupId>
-      <artifactId>nippy</artifactId>
-      <version>3.0.0</version>
     </dependency>
   </dependencies>
   <build>
